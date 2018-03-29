@@ -20,7 +20,7 @@ public class TextLinesConsumer extends AbstractAccumulatingConsumer<String[]> {
     }
 
     @Override
-    protected String[] getPoisonPill() {
+    public String[] getStopSignal() {
         return STOP_SIGNAL;
     }
 }

@@ -2,6 +2,7 @@ package com.phil.oracle.interview.textlinestats;
 
 import com.phil.oracle.interview.textlinestats.framework.AbstractProducer;
 import com.phil.oracle.interview.textlinestats.framework.BlockingBuffer;
+import com.phil.oracle.interview.textlinestats.framework.Consumer;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -19,7 +20,8 @@ public class TextLinesProducer extends AbstractProducer<String[]> {
     private final String textFileName;       // the file name to read
     private final int itemsBatchSize;        // how many text lines to batch up into each array put into the buffer
 
-    public TextLinesProducer(String textFileName, int itemsBatchSize) {
+    public TextLinesProducer(String textFileName, int itemsBatchSize, Consumer<String[]> consumer) {
+        super(1, consumer);     // this file-streaming producer is always single-threaded
         if(itemsBatchSize <= 0) {
             throw new UnsupportedOperationException("Items batch size has to be greater than zero!");
         }
@@ -33,7 +35,7 @@ public class TextLinesProducer extends AbstractProducer<String[]> {
      * @return number of items streamed to the buffer (if batchSize is 1, it will be the # of lines)
      */
     @Override
-    public int produceToBuffer(BlockingBuffer<String[]> buffer) throws InterruptedException {
+    public long produceToBuffer(BlockingBuffer<String[]> buffer) throws InterruptedException {
 
         int lineCount = 0;
         InputStream inputStream = getInputFileStream();

@@ -9,10 +9,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.IntStream;
 
 /**
  * The main application - generates statistics from a text file
@@ -37,9 +33,9 @@ public final class TextFileStatsGenerator {
      */
     public static void main(String[] args) {
         if (args.length < 1) {
-            System.out.println("Command-line: java -jar textfilestats.jar [classpath filename or disk file] " +
+            System.out.println("Command-line: java -jar textlinestats.jar [classpath filename or disk file] " +
                     "[optional max runtime duration in seconds (default " + DEFAULT_MAX_SECONDS_TO_RUN + ")]\n" +
-                    "Examples: 'java -jar textfilestats.jar war_and_peace.txt' or 'java -jar textlinestats.jar c:/giant.log 300'");
+                    "Examples: 'java -jar textlinestats.jar war_and_peace.txt' or 'java -jar textlinestats.jar c:/giant.log 300'");
             return;
         }
         String fileName = args[0];
@@ -76,7 +72,7 @@ public final class TextFileStatsGenerator {
         setConsumer(new TextLinesConsumer(BlockingBuffer.instance(bufferSize), accumulators, consumerThreadCount));
 
         // initialize the producer
-        setProducer(new TextLinesProducer(textFileName, batchSize).linkWithConsumer(consumer));
+        setProducer(new TextLinesProducer(textFileName, batchSize, consumer));
     }
 
     /**
@@ -85,15 +81,8 @@ public final class TextFileStatsGenerator {
      */
     void run(int maxSecondsToRun) {
         final long start = System.currentTimeMillis();  // to capture wall clock elapsed time for the run
-
-        // run the consumer on multiple threads, to maximize resources for accumulators
-        final ExecutorService consumerExecutor = startConsumer();
-
-        // run the producer (single threaded - assuming lots more work is needed on the consuming side)
-        final ExecutorService producerExecutor = startProducer();
-
-        // allow both executors to run for maxRuntime, and shut them down, starting with producer
-        shutdown(maxSecondsToRun, producerExecutor, consumerExecutor);
+        final long maxMillisToRun = ((long)maxSecondsToRun) * 1000;
+        AsyncFlowOrchestrator.runProducerConsumer(maxMillisToRun, producer, consumer);
 
         // output the summarized statistics for each accumulator
         accumulators.forEach(Accumulator::summarize);
@@ -112,47 +101,6 @@ public final class TextFileStatsGenerator {
             String avg = String.valueOf(BigDecimal.valueOf(letterCount).divide(BigDecimal.valueOf(wordCount), 1, RoundingMode.HALF_UP));
             System.out.println("Total letter count " + letterCount + " / total word count " + wordCount + " = "
                     + avg + " average letters per word");
-        }
-    }
-
-    /**
-     * Starts the producer (single threaded)
-     *
-     * @return - the producer executor
-     */
-    private ExecutorService startProducer() {
-        final ExecutorService executor = Executors.newSingleThreadExecutor();
-        executor.execute(producer);
-        return executor;
-    }
-
-    /**
-     * Starts the consumer, with the intent to scale this part effectively on multicore systems
-     *
-     * @return - the consumer executor
-     */
-    private ExecutorService startConsumer() {
-        final ExecutorService executor = Executors.newFixedThreadPool(consumer.getThreadCount());
-        IntStream.range(0, consumer.getThreadCount()).forEach(i -> executor.execute(consumer));
-        return executor;
-    }
-
-    /**
-     * Shuts down all executors (awaiting up to the specified timeout)
-     * @param executors - varargs list of executors to shut down
-     */
-    private void shutdown(int maxSecondsToRun, ExecutorService... executors) {
-        // not ideal...it would be better to shutdown asynchronously and with finer granularity
-        // as this stands, it could block on every executor synchronously for the same duration
-        for (ExecutorService executor : executors) {
-            executor.shutdown();
-            try {
-                executor.awaitTermination(maxSecondsToRun, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            } finally {
-                executor.shutdownNow();
-            }
         }
     }
 

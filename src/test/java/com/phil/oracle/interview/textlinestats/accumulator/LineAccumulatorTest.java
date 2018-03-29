@@ -1,6 +1,6 @@
 package com.phil.oracle.interview.textlinestats.accumulator;
 
-import com.phil.oracle.interview.textlinestats.framework.TextLinesUtil;
+import com.phil.oracle.interview.textlinestats.framework.TestUtil;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -19,7 +19,7 @@ public class LineAccumulatorTest {
         List<String> lines = new ArrayList<>();
         int expectedLines = 10000;
         for (int i = 0; i < expectedLines; i++) {
-            lines.add(TextLinesUtil.generateRandomSentence());
+            lines.add(TestUtil.generateRandomSentence());
         }
 
         // simulate concurrent accumulation in a similar fashion to the app

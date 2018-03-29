@@ -2,80 +2,120 @@ package com.phil.oracle.interview.textlinestats.framework;
 
 import org.junit.Test;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.net.URISyntaxException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Arrays;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.*;
 
 public class AbstractProducerTest {
 
     @Test
-    public void shouldProduceToBufferAsExpected() throws URISyntaxException, InterruptedException {
+    public void shouldProduceToBufferAsExpected() throws InterruptedException {
+        BlockingBuffer<Integer> buffer = BlockingBuffer.instance(1000);
+        final int consumerThreadCount = 2, consumerStopSignal = -1;
+        Consumer<Integer> consumerStub = new ConsumerStub<>(consumerThreadCount, buffer, consumerStopSignal);
 
-        BlockingBuffer<String[]> buffer = BlockingBuffer.instance(Integer.MAX_VALUE);
-
-        AbstractProducer<String[]> producer = new AbstractProducer<String[]>() {
+        final int itemsToProduce = 101;
+        Producer<Integer> producerStub = new AbstractProducer<Integer>(consumerStub) {
             @Override
-            protected int produceToBuffer(BlockingBuffer<String[]> buffer) throws InterruptedException {
-                Path path = null;
-                try {
-                    path = Paths.get(ClassLoader.getSystemResource(TextLinesUtil.SAMPLE_TEXT_FILE_NAME).toURI());
-                } catch(URISyntaxException e) {
-                    fail("Shouldn't be here!");
+            public long produceToBuffer(BlockingBuffer<Integer> buffer) throws InterruptedException {
+                int item;
+                for (item = 1; item <= itemsToProduce; item++) {
+                    buffer.put(item); // a sequence of integers 1 to the number of items
                 }
-                int itemCount = 0;
-                try (BufferedReader br = Files.newBufferedReader(path)) {
-                    for (String line; (line = br.readLine()) != null; itemCount++) {
-                        buffer.put(new String[]{line});
-                    }
-                } catch (IOException e) {
-                    fail("Failed to read file '" + TextLinesUtil.SAMPLE_TEXT_FILE_NAME + "' - please ensure it's in the classpath");
-                }
-                return itemCount;
+                return item;
             }
         };
-        producer.setBuffer(buffer);
-        final String[] consumerPoison = new String[0];
-        producer.setConsumerPoison(consumerPoison);
-        producer.setConsumerThreadCount(1);
+        assertEquals(1, producerStub.getThreadCount());
+        assertEquals(buffer, producerStub.getBuffer());
         // run the producer directly on this thread to fill up the buffer
-        producer.run();
+        producerStub.run();
 
-        // total the number of lines and characters within the buffer
-        int bufferLineCount = 0, bufferCharCount = 0;
-        while (!buffer.isEmpty()) {
-            final String[] itemBatch = buffer.take();
-            if(Arrays.equals(itemBatch, consumerPoison))
-                break;
+        // it should add all the items, and a poison pill per consumer thread
+        assertEquals(itemsToProduce + consumerThreadCount, buffer.size());
 
-            for (String item : itemBatch) {
-                bufferLineCount++;
-                bufferCharCount += item.length();
-            }
+        // remove all the actual items from the buffer, and tie out with what we expect
+        long bufferSum = 0;
+        for (int i = 0; i < itemsToProduce; i++) {
+            bufferSum += buffer.take();
         }
+        long expectedSum = itemsToProduce * (itemsToProduce + 1) / 2; // Gauss formula
+        assertEquals(expectedSum, bufferSum);
 
-        // now read the test file separately to determine the expected number of lines and characters
-        int expectedLineCount = 0, expectedCharCount = 0;
-        Path path = Paths.get(ClassLoader.getSystemResource(TextLinesUtil.SAMPLE_TEXT_FILE_NAME).toURI());
-        try (BufferedReader br = Files.newBufferedReader(path)) {
-            for (String line; (line = br.readLine()) != null; expectedLineCount++) {
-                expectedCharCount += line.length();
-            }
-        } catch (IOException e) {
-            fail("Failed to read file '" + TextLinesUtil.SAMPLE_TEXT_FILE_NAME + "' - please ensure it's in the classpath");
+        // the remaining items should be the poison pills
+        for (int i = 0; i < consumerThreadCount; i++) {
+            assertEquals(consumerStub.getStopSignal(), buffer.take());
         }
-
-        // ensure expected contents match with the buffer contents
-        assertTrue(expectedLineCount > 0 && expectedCharCount > 0);
-        assertEquals(expectedLineCount, bufferLineCount);
-        assertEquals(expectedCharCount, bufferCharCount);
+        assertTrue(buffer.isEmpty());
     }
 
-    //TODO testInterruptedScenario (needs more clarity on requirements)
+    @Test
+    public void testInterruptedScenario() throws InterruptedException {
+        BlockingBuffer<Integer> buffer = BlockingBuffer.instance(Integer.MAX_VALUE);
+        final int consumerThreadCount = 2, consumerStopSignal = -1;
+        Consumer<Integer> consumer = new ConsumerStub<>(consumerThreadCount, buffer, consumerStopSignal);
+
+        final int itemsToProduce = 101, sleepMillis = 50;
+        Producer<Integer> producer = new AbstractProducer<Integer>(consumer) {
+            @Override
+            public long produceToBuffer(BlockingBuffer<Integer> buffer) throws InterruptedException {
+                int item;
+                for (item = 1; item <= itemsToProduce; item++) {
+                    buffer.put(item); // a sequence of integers 1 to the number of items
+                }
+                Thread.sleep(sleepMillis);
+                return item;
+            }
+        };
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        executorService.execute(producer);
+        executorService.shutdown();
+        executorService.awaitTermination(20, TimeUnit.MILLISECONDS);
+        executorService.shutdownNow();
+
+        // as it stands now, the poison pills won't get added due to the restored interrupt
+        assertEquals(itemsToProduce, buffer.size());
+        // TODO determine/assert proper flow in this scenario
+    }
+
+    private static class ConsumerStub<T> implements Consumer<T> {
+        private final int threadCount;
+        private final BlockingBuffer<T> buffer;
+        private final T stopSignal;
+
+        ConsumerStub(int threadCount, BlockingBuffer<T> buffer, T stopSignal) {
+            this.threadCount = threadCount;
+            this.buffer = buffer;
+            this.stopSignal = stopSignal;
+        }
+
+        @Override
+        public int getThreadCount() {
+            return threadCount;
+        }
+
+        @Override
+        public BlockingBuffer<T> getBuffer() {
+            return buffer;
+        }
+
+        @Override
+        public T getStopSignal() {
+            return stopSignal;
+        }
+
+        @Override
+        public long consumeFromBuffer(BlockingBuffer<T> buffer) {
+            fail("Shouldn't be here!");
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void run() {
+            fail("Shouldn't be here!");
+            throw new UnsupportedOperationException();
+        }
+    }
 
 }

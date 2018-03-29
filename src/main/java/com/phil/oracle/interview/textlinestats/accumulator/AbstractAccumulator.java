@@ -9,7 +9,6 @@ import java.util.concurrent.atomic.AtomicLong;
  * Abstract implementation of the Accumulator interface
  *
  * @param <T> - the type of the input item this accumulator will be processing
- *
  * @author Phil
  */
 public abstract class AbstractAccumulator<T> implements Accumulator<T> {

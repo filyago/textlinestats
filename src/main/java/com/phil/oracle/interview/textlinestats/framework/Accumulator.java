@@ -4,7 +4,6 @@ package com.phil.oracle.interview.textlinestats.framework;
  * A very simple interface for accumulating and summarizing various statistics over a list of of input items
  *
  * @param <T> - the type of input items this accumulator will be processing
- *
  * @author Phil
  */
 public interface Accumulator<T> {

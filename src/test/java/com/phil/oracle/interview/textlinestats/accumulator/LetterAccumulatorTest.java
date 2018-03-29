@@ -1,6 +1,6 @@
 package com.phil.oracle.interview.textlinestats.accumulator;
 
-import com.phil.oracle.interview.textlinestats.framework.TextLinesUtil;
+import com.phil.oracle.interview.textlinestats.framework.TestUtil;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -20,7 +20,7 @@ public class LetterAccumulatorTest {
         int lineCount = 10000, expectedLetterCount = 0;
         List<String> lines = new ArrayList<>(lineCount);
         for (int i = 0; i < lineCount; i++) {
-            final String line = TextLinesUtil.generateRandomSentence();
+            final String line = TestUtil.generateRandomSentence();
             expectedLetterCount += getLetterCount(line);
             lines.add(line);
         }

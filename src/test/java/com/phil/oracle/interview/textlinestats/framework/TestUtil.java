@@ -2,7 +2,7 @@ package com.phil.oracle.interview.textlinestats.framework;
 
 import java.util.concurrent.ThreadLocalRandom;
 
-public class TextLinesUtil {
+public class TestUtil {
     public static final String SAMPLE_TEXT_FILE_NAME = "war_and_peace.txt";
     private static final String DELIMITER = " ";
 
@@ -23,5 +23,9 @@ public class TextLinesUtil {
         }
         return inputBuilder.substring(0, inputBuilder.length() - DELIMITER.length());
     }
+
+
+
+
 
 }

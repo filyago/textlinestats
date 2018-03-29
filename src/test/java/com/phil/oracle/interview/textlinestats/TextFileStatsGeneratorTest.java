@@ -23,7 +23,7 @@ public class TextFileStatsGeneratorTest {
         TextFileStatsGenerator.main(new String[]{"a", "b"});
 
         // run the sample file in classpath
-        TextFileStatsGenerator.main(new String[]{TextLinesUtil.SAMPLE_TEXT_FILE_NAME});
+        TextFileStatsGenerator.main(new String[]{TestUtil.SAMPLE_TEXT_FILE_NAME});
 
         // run a sample file on disk
         TextFileStatsGenerator.main(new String[]{"c:/windows/logs/cbs/cbs.log"});
@@ -49,18 +49,19 @@ public class TextFileStatsGeneratorTest {
 
         app.setAccumulators(accumulators);
 
-        // initialize the buffer
-        int bufferSize = 50010;  // the buffer should not be a bottleneck in this test
-        int numItemsToProduce = 50000;  // ensure all items produced will fit into the buffer without blocking
+        // the buffer should not be a bottleneck in this test
+        int itemsToProduce = 50000;  // ensure all items produced will fit into the buffer without blocking
+        int bufferSize = itemsToProduce + Runtime.getRuntime().availableProcessors();
+        final BlockingBuffer<String[]> buffer = BlockingBuffer.instance(bufferSize);
 
         // initialize the consumer
         int consumerThreadCount = 1;  // consumer will be single-threaded in the first run
-        Consumer<String[]> consumer = new TextLinesConsumer(BlockingBuffer.instance(bufferSize), accumulators, consumerThreadCount);
+        Consumer<String[]> consumer = new TextLinesConsumer(buffer, accumulators, consumerThreadCount);
         app.setConsumer(consumer);
 
         // stub out the producer - it needs to be as quick as possible to avoid being a factor
         // it also needs to constrain on the number of items produced to ensure no blocking
-        app.setProducer(new DummyTextArraysProducer(numItemsToProduce).linkWithConsumer(consumer));
+        app.setProducer(new DummyTextArraysProducer(itemsToProduce, consumer));
 
         // run, and time
         int maxSecondsToRun = 5;
@@ -68,11 +69,13 @@ public class TextFileStatsGeneratorTest {
         app.run(maxSecondsToRun);
         long singleThreadedNanos = System.nanoTime() - start;
 
+        assertTrue(buffer.isEmpty());
+
         // run and time the same exact test with a multithreaded consumer
         consumerThreadCount = Runtime.getRuntime().availableProcessors();  // a reasonable value - no significant gains beyond it
-        consumer = new TextLinesConsumer(BlockingBuffer.instance(bufferSize), accumulators, consumerThreadCount);
+        consumer = new TextLinesConsumer(buffer, accumulators, consumerThreadCount);
         app.setConsumer(consumer);
-        app.setProducer(new DummyTextArraysProducer(numItemsToProduce).linkWithConsumer(consumer));
+        app.setProducer(new DummyTextArraysProducer(itemsToProduce, consumer));
         start = System.nanoTime();
         app.run(maxSecondsToRun);
         long multiThreadedNanos = System.nanoTime() - start;
@@ -92,12 +95,13 @@ public class TextFileStatsGeneratorTest {
 
         private final int arraysToProduce;
 
-        DummyTextArraysProducer(int arraysToProduce) {
+        DummyTextArraysProducer(int arraysToProduce, Consumer<String[]> consumer) {
+            super(1, consumer);
             this.arraysToProduce = arraysToProduce;
         }
 
         @Override
-        public int produceToBuffer(BlockingBuffer<String[]> buffer) {
+        public long produceToBuffer(BlockingBuffer<String[]> buffer) {
             int i = 1;
             for (; i <= arraysToProduce; i++) {
                 try {
@@ -127,10 +131,10 @@ public class TextFileStatsGeneratorTest {
         final Consumer<String[]> consumer = new TextLinesConsumer(buffer, accumulators, consumerThreadCount);
         app.setConsumer(consumer);
 
-        final Producer<String[]> producer = new DummyTextArraysProducer(Integer.MAX_VALUE).linkWithConsumer(consumer);
+        final Producer<String[]> producer = new DummyTextArraysProducer(Integer.MAX_VALUE, consumer);
         app.setProducer(producer);
 
-        // run, and watch it get interrupted...need better understanding of requirements for proper assertions/flow in this context
+        // run, and watch it get interrupted
         int maxSecondsToRun = 1;
         app.run(maxSecondsToRun);
 

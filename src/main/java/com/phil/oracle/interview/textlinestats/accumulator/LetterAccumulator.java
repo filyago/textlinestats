@@ -30,7 +30,7 @@ public class LetterAccumulator extends AbstractAccumulator<String[]> {
      */
     @Override
     public void accumulateItem(String[] inputItem) {
-        for(String line : inputItem) {
+        for (String line : inputItem) {
             for (int i = 0; i < line.length(); i++) {
                 char ch = line.charAt(i);
                 if (Character.isLetter(ch) && (int) ch <= MAX_CHAR_CODE) {

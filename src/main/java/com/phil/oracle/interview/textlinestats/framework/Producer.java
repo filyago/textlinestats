@@ -1,43 +1,62 @@
 package com.phil.oracle.interview.textlinestats.framework;
 
+import java.util.concurrent.TimeUnit;
+
 /**
- * Producer is a Runnable that needs to signal completion to Consumer threads when it has finished
+ * The Producer is a Runnable that produces items to a BlockingBuffer(shared data structure with the Consumer)
  *
  * @param <T> - the type of objects that will be produced to the Buffer
- *              this should match the Buffer as well as the Consumer
  *
  * @author Phil
-  */
+ */
 public interface Producer<T> extends Runnable {
 
     /**
-     * Convenience method for sharing Consumer properties
-     * @param consumer
-     * @return
+     * @return - the Producer's thread count
      */
-    default Producer<T> linkWithConsumer(Consumer<T> consumer) {
-        setBuffer(consumer.getBuffer());
-        setConsumerThreadCount(consumer.getThreadCount());
-        setConsumerPoison(consumer.getStopSignal());
-        return this;
+    int getThreadCount();
+
+    /**
+     * @return - the Producer's buffer
+     */
+    BlockingBuffer<T> getBuffer();
+
+    @Override
+    default void run() {
+        long start = System.nanoTime();
+        try {
+            System.out.println(getClass().getSimpleName() + ": Started on " + Thread.currentThread().getName());
+            long itemCount = produceToBuffer(getBuffer());
+            System.out.println(getClass().getSimpleName() + ": Finished on " + Thread.currentThread().getName()
+                    + ", total items produced = " + itemCount + ", total time taken = " +
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) + " ms");
+        } catch (InterruptedException e) {
+            System.out.println(getClass().getSimpleName() + ": Interrupted on " + Thread.currentThread().getName()
+                    + ", total time taken = " + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) + " ms");
+            Thread.currentThread().interrupt();     // restore the interrupt (passing it on to signalCompletion)
+        } finally {
+            try {
+                signalCompletion();
+            } catch (InterruptedException e) {
+                System.out.println(getClass().getSimpleName() + ": Interrupted on " + Thread.currentThread().getName() +
+                " while signalling completion to Consumer threads!");
+                Thread.currentThread().interrupt();  // restore the interrupt
+            }
+        }
     }
 
     /**
-     * Set to the Producer from the Consumer
-     * @param consumerThreadCount
+     * For concrete realizations to implement
+     *
+     * @return - number of items produced
+     * @throws InterruptedException - gets caught and restored in run()
      */
-    void setConsumerThreadCount(int consumerThreadCount);
+    long produceToBuffer(BlockingBuffer<T> buffer) throws InterruptedException;
 
     /**
-     * Set to the Producer from the Consumer
-     * @param buffer
+     * For concrete realizations to implement - poison pill per consumer thread
      */
-    void setBuffer(BlockingBuffer<T> buffer);
+    void signalCompletion() throws InterruptedException;
 
-    /**
-     * Set to the Producer from the Consumer
-     * @param poison
-     */
-    void setConsumerPoison(T poison);
 
-}
+ }

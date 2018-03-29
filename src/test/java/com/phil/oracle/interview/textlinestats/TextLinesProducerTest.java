@@ -1,8 +1,8 @@
 package com.phil.oracle.interview.textlinestats;
 
-import com.phil.oracle.interview.textlinestats.TextLinesProducer;
 import com.phil.oracle.interview.textlinestats.framework.BlockingBuffer;
-import com.phil.oracle.interview.textlinestats.framework.TextLinesUtil;
+import com.phil.oracle.interview.textlinestats.framework.Consumer;
+import com.phil.oracle.interview.textlinestats.framework.TestUtil;
 import org.junit.Test;
 
 import java.io.BufferedReader;
@@ -21,8 +21,8 @@ public class TextLinesProducerTest {
         final int batchSizePerItem = 1000;
 
         BlockingBuffer<String[]> buffer = BlockingBuffer.instance(Integer.MAX_VALUE);
-        TextLinesProducer producer = new TextLinesProducer(TextLinesUtil.SAMPLE_TEXT_FILE_NAME, batchSizePerItem);
-        producer.setBuffer(buffer);
+        Runnable producer = new TextLinesProducer(TestUtil.SAMPLE_TEXT_FILE_NAME,
+                batchSizePerItem, new ConsumerStub<>(0, buffer, null));
         // run the producer directly on this thread to fill up the buffer
         producer.run();
 
@@ -38,13 +38,13 @@ public class TextLinesProducerTest {
 
         // now read the test file separately to determine the expected number of lines and characters
         int expectedLineCount = 0, expectedCharCount = 0;
-        Path path = Paths.get(ClassLoader.getSystemResource(TextLinesUtil.SAMPLE_TEXT_FILE_NAME).toURI());
+        Path path = Paths.get(ClassLoader.getSystemResource(TestUtil.SAMPLE_TEXT_FILE_NAME).toURI());
         try (BufferedReader br = Files.newBufferedReader(path)) {
             for (String line; (line = br.readLine()) != null; expectedLineCount++) {
                 expectedCharCount += line.length();
             }
         } catch (IOException e) {
-            fail("Failed to read file '" + TextLinesUtil.SAMPLE_TEXT_FILE_NAME + "' - please ensure it's in the classpath");
+            fail("Failed to read file '" + TestUtil.SAMPLE_TEXT_FILE_NAME + "' - please ensure it's in the classpath");
         }
         assertTrue(expectedLineCount > 0 && expectedCharCount > 0);
 
@@ -57,10 +57,50 @@ public class TextLinesProducerTest {
     public void testEdgeCases() {
 
         try {
-            new TextLinesProducer(TextLinesUtil.SAMPLE_TEXT_FILE_NAME, 0);
+            new TextLinesProducer(TestUtil.SAMPLE_TEXT_FILE_NAME,
+                    0, new ConsumerStub<>(0, null, null));
             fail("Shouldn't be here!");
         } catch (UnsupportedOperationException e) {
             e.printStackTrace(); //ok
+        }
+    }
+
+
+    private static class ConsumerStub<T> implements Consumer<T> {
+        private final int threadCount;
+        private final BlockingBuffer<T> buffer;
+        private final T stopSignal;
+
+        ConsumerStub(int threadCount, BlockingBuffer<T> buffer, T stopSignal) {
+            this.threadCount = threadCount;
+            this.buffer = buffer;
+            this.stopSignal = stopSignal;
+        }
+
+        @Override
+        public int getThreadCount() {
+            return threadCount;
+        }
+
+        @Override
+        public BlockingBuffer<T> getBuffer() {
+            return buffer;
+        }
+
+        @Override
+        public T getStopSignal() {
+            return stopSignal;
+        }
+
+        @Override
+        public long consumeFromBuffer(BlockingBuffer<T> buffer) {
+            fail("Shouldn't be here!");
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void run() {
+            fail("Shouldn't be here!");
         }
     }
 }
